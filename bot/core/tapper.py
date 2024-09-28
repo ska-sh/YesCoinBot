@@ -21,6 +21,7 @@ class Tapper:
     def __init__(self, tg_client: Client):
         self.session_name = tg_client.name
         self.tg_client = tg_client
+        self.friendly_address=None
 
     async def get_tg_web_data(self, proxy: str | None) -> str:
         if proxy:
@@ -230,6 +231,87 @@ class Tapper:
         except Exception as error:
             logger.error(f"{self.session_name} | Proxy: {proxy} | Error: {error}")
 
+    async def daily_task(self, http_client: aiohttp.ClientSession):
+        try:
+            response = await http_client.get(url='https://api-backend.yescoin.gold/mission/getDailyMission')
+            response.raise_for_status()
+            response_json = await response.json()
+            if response_json['message'] == u'Success':
+                data = response_json['data']
+                for task in data:
+                    if task['link'] == u'CheckIn':
+                        await self.daily_check_in(http_client=http_client, task=task)
+                    else:
+                        if task['missionStatus'] == 0:
+                            await self.click_daily_mission(http_client=http_client, task=task)
+                        else:
+                            await self.check_daily_mission(http_client=http_client, task=task)
+        except Exception as error:
+            logger.error(f"{self.session_name} | Daily Task Error: {error}")
+
+    async def daily_check_in(self, http_client: aiohttp.ClientSession, task: dict):
+        try:
+            if task['checkStatus'] == 0:
+                response = await http_client.get(url='https://api-backend.yescoin.gold/signIn/list')
+                response.raise_for_status()
+                response_json = await response.json()
+                if response_json['message'] == u'Success':
+                    data = response_json['data']
+                    for task in data:
+                        if task['status'] == 1:
+                            if self.friendly_address is not None:
+                                json_data = {"id": task[id], "createAt": int(time()), "signInType": 1, "destination": self.friendly_address}
+                            else:
+                                logger.warning(f"{self.session_name} | 请绑定钱包地址")
+        except Exception as error:
+            logger.error(f"{self.session_name} | Daily Check In Error: {error}")
+
+
+    async def click_daily_mission(self, http_client: aiohttp.ClientSession, task: dict):
+        try:
+            response = await http_client.post(url='https://api-backend.yescoin.gold/mission/clickDailyMission', json=task['messionId'])
+            response.raise_for_status()
+            response_json = await response.json()
+            if response_json['message'] == u'Success':
+                logger.success(f"Click Daily Mission Success: {task['des']}")
+                await self.check_daily_mission(http_client=http_client, task=task)
+        except Exception as error:
+            logger.error(f"{self.session_name} | Click Daily Mission Error: {error}")
+
+    async def check_daily_mission(self, http_client: aiohttp.ClientSession, task: dict):
+        try:
+            if task['checkStatus'] == 1:
+                return False
+            response = await http_client.post(url='https://api-backend.yescoin.gold/mission/checkDailyMission', json=task['messionId'])
+            response.raise_for_status()
+            response_json = await response.json()
+            if response_json['message'] == u'Success':
+                logger.success(f"Check Daily Mission Success: {task['des']}")
+                await self.claim_reward(http_client=http_client, task=task)
+        except Exception as error:
+            logger.error(f"{self.session_name} | Check Daily Mission Error: {error}")
+
+    async def claim_reward(self, http_client: aiohttp.ClientSession, task: dict):
+        try:
+            response = await http_client.post(url='https://api-backend.yescoin.gold/mission/claimReward', json=task['messionId'])
+            response.raise_for_status()
+            response_json = await response.json()
+            if response_json['message'] == u'Success':
+                logger.success(f"Claim Reward Success: {task['des']} | reward: {response_json['data']['reward']}")
+                await self.claim_reward(http_client=http_client, task=task)
+        except Exception as error:
+            logger.error(f"{self.session_name} | Check Daily Mission Error: {error}")
+
+    async def get_wallet(self, http_client: aiohttp.ClientSession):
+        try:
+            response = await http_client.get(url='https://api-backend.yescoin.gold/wallet/getWallet')
+            response.raise_for_status()
+            response_json = await response.json()
+            if response_json['message'] == u'Success':
+                return response_json['data'][0]['friendlyAddress']
+        except Exception as error:
+            logger.error(f"{self.session_name} | Get Wallet Error: {error}")
+
     async def run(self, proxy: str | None) -> None:
         access_token_created_time = 0
         active_turbo = False
@@ -260,6 +342,8 @@ class Tapper:
 
                         logger.info(f"{self.session_name} | Rank: <m>{rank}</m> | Level: <r>{level}</r> | "
                                     f"Invite amount: <y>{invite_amount}</y>")
+
+                        self.friendly_address = await self.get_wallet(http_client=http_client)
 
                     taps = randint(a=settings.RANDOM_TAPS_COUNT[0], b=settings.RANDOM_TAPS_COUNT[1])
 
