@@ -1,5 +1,2 @@
-type://user:pass@ip:port
-type://user:pass:ip:port
-type://ip:port:user:pass
-type://ip:port@user:pass
-type://ip:port
+socks5://156.231.151.1:2024:ska2024:ska2024
+socks5://156.231.151.2:2024:ska2024:ska2024
